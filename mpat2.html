@@ -559,7 +559,7 @@ const fieldDefinitions = {
       },
       'model': {
         help: 'Generic motor model - for full custom motor definitions',
-        requiresSubFields: ['kv', 'r', 'l', 'd0', 'd1', 'thermal_r', 'thermal_c']
+        requiresSubFields: ['kv', 'r', 'l', 'd0', 'd1', 'thermal_r', 'thermal_c', 'inertia']
       }
     }
   },
@@ -681,12 +681,12 @@ const fieldDefinitions = {
   },
   'motor.d0': {
     defaultValue: '1e-2',
-    description: 'Linear iron loss in W/s',
+    description: 'Linear iron loss coefficient in N·m',
     type: 'numeric'
   },
   'motor.d1': {
     defaultValue: '1e-4',
-    description: 'Quadratic iron loss in W/s^2',
+    description: 'Quadratic iron loss coefficient in N·m·s',
     type: 'numeric'
   },
   'motor.thermal_r': {
@@ -697,6 +697,11 @@ const fieldDefinitions = {
   'motor.thermal_c': {
     defaultValue: '50',
     description: 'Thermal capacitance in J/°C',
+    type: 'numeric'
+  },
+  'motor.inertia': {
+    defaultValue: '0',
+    description: 'Rotor inertia in kg·m²',
     type: 'numeric'
   }
 };
@@ -719,6 +724,13 @@ const motorSubFieldDefaults = Object.fromEntries(
     .filter(([key]) => key.startsWith('motor.'))
     .map(([key, def]) => [key, { value: def.defaultValue, description: def.description }])
 );
+
+// Default values for optional custom motor model fields
+const motorModelDefaults = {
+  'd0': 1e-12,
+  'd1': 1e-12,
+  'inertia': 0,
+};
 
 // Default axis configurations
 const defaultAxisConfigs = [
@@ -1131,7 +1143,7 @@ class Controller {
   }
 
   getMaxSpeed(voltage, motor, config) {
-    return voltage * motor.getKv() * this.getSpeedFactor() / 60.0 / config.gear_reduction;
+    return voltage * motor.getKv() * this.getSpeedFactor(config) / 60.0 / config.gear_reduction;
   }
 
   getCurrentFromThermalPower(thermalW, {voltage, pwm}) {
@@ -1199,10 +1211,15 @@ class MoteusController extends Controller {
     return basePower * pwmDerate;
   }
 
-  getSpeedFactor() {
-    // Measured with moteus-c1, moteus-n1 and moteus-x1 on a MAD 8318 at 12V
-    // and 18V on 2025-04-17.
-    return 0.75;
+  getSpeedFactor(config) {
+    // As of 2026-01-01.  Previously, it was 1.03e-6.
+    const current_sample_time = 0.60e-6;
+    const min_pwm = current_sample_time / (0.5 / config.pwm);
+    const max_pwm = 1.0 - min_pwm;
+    const max_voltage_ratio = ((max_pwm - 0.5) * 2.0);
+    const velocity_margin = 0.87;
+
+    return max_voltage_ratio * velocity_margin;
   }
 
   getMaxCurrent() {
@@ -1435,7 +1452,7 @@ class Motor {
   }
 
   getMaxVelocity(config) {
-    return config.controller.getSpeedFactor() * config.voltage * this.Kv / 60.0 / config.gear_reduction;
+    return config.controller.getSpeedFactor(config) * config.voltage * this.Kv / 60.0 / config.gear_reduction;
   }
 
   getOperatingPoint(config) {
@@ -1823,7 +1840,7 @@ class OdrivePro extends OdriveController {
     });
   }
 
-  getSpeedFactor() {
+  getSpeedFactor(config) {
     return 0.90;
   }
 }
@@ -1854,7 +1871,7 @@ class OdriveS1 extends OdriveController {
     });
   }
 
-  getSpeedFactor() {
+  getSpeedFactor(config) {
     return 0.75;
   }
 }
@@ -1883,7 +1900,7 @@ class OdriveMicro extends OdriveController {
     });
   }
 
-  getSpeedFactor() {
+  getSpeedFactor(config) {
     return 0.75;
   }
 }
@@ -2041,7 +2058,7 @@ function evaluateMaxTorque(config) {
         deltaT / R :
         deltaT / (R * (1.0 - Math.exp(-timePeriodS / (R * C))));
 
-  const supplyVoltageMargin = Math.max(0, 0.5 * (config.controller.getSpeedFactor() * config.voltage - config.motor.getBackEmf(config.velocity, config)));
+  const supplyVoltageMargin = Math.max(0, 0.5 * (config.controller.getSpeedFactor(config) * config.voltage - config.motor.getBackEmf(config.velocity, config)));
 
   if (supplyVoltageMargin < 0.0) {
     return null;
@@ -2897,16 +2914,68 @@ function PlotView({ baseConfig, commonConfig, plotMetadata = null }) {
       const maxVel = maxVelResult?.velocity || 100;
       const defaultSpeedMax = Math.ceil(maxVel * 1.1 * 100) / 100; // Ensure 2 decimal places
 
-      // Get max torque at 0 speed using t=2s
-      const maxTorqueConfig = normalizeConfig({ ...baseConfig, velocity: 0, time: 2 });
-      const maxTorqueResult = evaluateMaxTorque(maxTorqueConfig);
-      const maxTorque = maxTorqueResult?.torque || 40;
-      const defaultTorqueMax = Math.ceil(maxTorque * 1.1 * 100) / 100; // Ensure 2 decimal places
+      // Sample velocities and find actual max/min torque at each
+      // This captures asymmetric limits and varying torque curves
+      let maxTorque = 0;
+      let maxTorqueAtVel = 0;
+
+      const numVelSamples = 20;
+
+      // First pass: find maximum positive torque across all velocities
+      for (let i = 0; i < numVelSamples; i++) {
+        const vel = (i / (numVelSamples - 1)) * maxVel;
+        const maxTorqueResult = evaluateMaxTorque(normalizeConfig({ ...baseConfig, velocity: vel, time: 2 }));
+        if (maxTorqueResult?.torque !== undefined && maxTorqueResult.torque !== null) {
+          if (maxTorqueResult.torque > maxTorque) {
+            maxTorque = maxTorqueResult.torque;
+            maxTorqueAtVel = vel;
+          }
+        }
+      }
+
+      // Second pass: find minimum negative torque using adaptive bound
+      let minTorque = 0;
+      let minTorqueAtVel = 0;
+      const maxNegativeTorque = -4 * Math.max(maxTorque, 10); // Use 4x max torque, minimum 40
+
+      for (let i = 0; i < numVelSamples; i++) {
+        const vel = (i / (numVelSamples - 1)) * maxVel;
+
+        // Binary search for max negative torque (most negative feasible torque)
+        let feasibleBound = 0; // Start at 0 (known feasible for small torques)
+        let infeasibleBound = maxNegativeTorque; // Adaptive bound based on max positive torque
+
+        for (let iter = 0; iter < 20; iter++) {
+          const testTorque = (feasibleBound + infeasibleBound) / 2;
+          const testConfig = normalizeConfig({ ...baseConfig, velocity: vel, torque: testTorque, time: 2 });
+          const result = evaluateOperatingPoint(testConfig);
+
+          const isFeasible = result && !result._infeasible_reason;
+
+          if (isFeasible) {
+            // This negative torque is feasible, try more negative
+            feasibleBound = testTorque;
+          } else {
+            // Too negative, search less negative
+            infeasibleBound = testTorque;
+          }
+        }
+
+        // The converged boundary is at feasibleBound (most negative feasible torque)
+        if (feasibleBound < minTorque) {
+          minTorque = feasibleBound;
+          minTorqueAtVel = vel;
+        }
+      }
+
+      // Add 10% margin and round to 2 decimal places
+      const defaultTorqueMin = Math.floor(minTorque * 1.1 * 100) / 100;
+      const defaultTorqueMax = Math.ceil(maxTorque * 1.1 * 100) / 100;
 
       return {
         speedMin: 0,
         speedMax: defaultSpeedMax,
-        torqueMin: -defaultTorqueMax,
+        torqueMin: defaultTorqueMin,
         torqueMax: defaultTorqueMax
       };
     } catch (error) {
@@ -3779,7 +3848,7 @@ function reifyObjects(dict) {
           reified[key] = Infinity;
         } else {
           const numValue = Number(value);
-          if (!isNaN(numValue) && isFinite(numValue) && value.trim() === numValue.toString()) {
+          if (!isNaN(numValue) && isFinite(numValue)) {
             reified[key] = numValue;
           } else {
             reified[key] = value; // Keep as string if not a number
@@ -3793,7 +3862,7 @@ function reifyObjects(dict) {
 
   // Special handling for 'model' motor type
   if (reified.motor === 'model') {
-    const requiredFields = ['motor.kv', 'motor.r', 'motor.l', 'motor.thermal_r', 'motor.thermal_c', 'motor.d0', 'motor.d1'];
+    const requiredFields = ['motor.kv', 'motor.r', 'motor.l', 'motor.thermal_r', 'motor.thermal_c'];
     const hasAllFields = requiredFields.every(field => reified[field] !== undefined && reified[field] !== null);
 
     if (hasAllFields) {
@@ -3804,8 +3873,9 @@ function reifyObjects(dict) {
         Kv: reified['motor.kv'],
         R_pp: reified['motor.r'], // User input is phase-to-phase
         L_pp: reified['motor.l'], // User input is phase-to-phase
-        d0: reified['motor.d0'],
-        d1: reified['motor.d1'],
+        d0: reified['motor.d0'] ?? motorModelDefaults.d0,
+        d1: reified['motor.d1'] ?? motorModelDefaults.d1,
+        inertia: reified['motor.inertia'] ?? motorModelDefaults.inertia,
         thermal: {
           'none': {
             R: reified['motor.thermal_r'],
@@ -3898,17 +3968,20 @@ function Simulator({ commonConfig, axisConfigs, onCellClick, selectedCell }) {
 
           let mergedDict;
           if (hasMotorFields) {
-            // Axis uses motor, merge all params including motor.* from common
-            mergedDict = { ...commonDict, ...dict };
-          } else {
-            // Axis doesn't use motor, only merge non-motor fields from common
-            const commonNonMotor = {};
+            // Axis uses motor fields, merge only motor.* fields from common
+            // This allows motor parameters to be split between common and axis configs
+            // Don't merge ALL common fields - that causes axis configs to override each other
+            const commonMotorFields = {};
             Object.keys(commonDict).forEach(key => {
-              if (key !== 'motor' && !key.startsWith('motor.')) {
-                commonNonMotor[key] = commonDict[key];
+              if (key === 'motor' || key.startsWith('motor.')) {
+                commonMotorFields[key] = commonDict[key];
               }
             });
-            mergedDict = { ...commonNonMotor, ...dict };
+            mergedDict = { ...commonMotorFields, ...dict };
+          } else {
+            // Axis doesn't use motor fields, don't merge anything from common
+            // Common fields will be merged later in generateCells
+            mergedDict = dict;
           }
           return reifyObjects(mergedDict);
         });
@@ -4459,9 +4532,13 @@ function generateUrlFromConfig(commonConfig, axisConfigs, plotState = null) {
     }
   });
 
+  // When motor=model, always include motor.* fields since they're required
+  const hasCustomMotor = commonDict['motor'] === 'model';
+
   Object.entries(commonDict).forEach(([field, value]) => {
     const fieldDef = getFieldDefinition(field);
-    if (fieldDef?.defaultValue !== value) {
+    const isMotorSubField = field.startsWith('motor.');
+    if (fieldDef?.defaultValue !== value || (hasCustomMotor && isMotorSubField)) {
       params.set(`common.${field}`, value);
     }
   });
@@ -4951,8 +5028,7 @@ document.getElementById('helpButton').onclick = () => window.showHelp();
   <div class="footerContent">
     <div class="footerText">
       <a id="homeLink" href="#" style="color: inherit; text-decoration: none;">moteus Performance Analysis Tool</a>
-      | Licensed under Apache 2.0
-      | (c) 2025 mjbots Robotic Systems
+      | <a href="https://github.com/mjbots/moteus/blob/main/docs/mpat.html">Open Source under the Apache 2.0</a>
       | <a href="https://mjbots.com">https://mjbots.com</a>
     </div>
     <button id="helpButton" class="helpButton footerButton">
