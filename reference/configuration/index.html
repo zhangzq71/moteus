@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -29,7 +29,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1011,6 +1011,8 @@
       
         
       
+        
+      
     
     
     
@@ -1130,6 +1132,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../integration/rust/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rust Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../integration/can-fd/" class="md-nav__link">
         
   
@@ -1215,7 +1245,7 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_6" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_7" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -1237,14 +1267,14 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2146,6 +2176,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#servomax_regen_power_w" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        servo.max_regen_power_W
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#servoflux_brake_margin_voltage" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2871,6 +2912,8 @@
       
         
       
+        
+      
     
     
     
@@ -2936,6 +2979,34 @@
     
   
     Python
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rust/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rust
   
 
     
@@ -3418,6 +3489,17 @@
     <span class="md-ellipsis">
       
         servo.fault_velocity_error
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#servomax_regen_power_w" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        servo.max_regen_power_W
       
     </span>
   </a>
@@ -4199,6 +4281,18 @@ If set to <code>nan</code> (the default), no fault is triggered.</p>
 error exceeds this value.  The velocity control error is the
 difference between the commanded and measured velocity in revolutions
 per second.  If set to <code>nan</code> (the default), no fault is triggered.</p>
+<h2 id="servomax_regen_power_w"><code>servo.max_regen_power_W</code><a class="headerlink" href="#servomax_regen_power_w" title="Permanent link">&para;</a></h2>
+<p>When regenerating, moteus will dissipate energy in the windings in the
+motor in order to limit the maximum regenerative power to the input bus
+below this amount.</p>
+<p><code>nan</code> disables the feature, in which case only flux braking will result in energy being dissipated in the windings.</p>
+<p><code>0</code> means allow no regenerative power to the input bus.</p>
+<p>WARNING: The amount of power that can be dissipated in the windings is
+subject to the current limit of the board, along with the supply
+voltage and phase winding resistance.  Once moteus reaches the maximum
+amount of power that can be applied to the phase windings, further
+power will be directed to the input bus regardless of the value of
+this setting.</p>
 <h2 id="servoflux_brake_margin_voltage"><code>servo.flux_brake_margin_voltage</code><a class="headerlink" href="#servoflux_brake_margin_voltage" title="Permanent link">&para;</a></h2>
 <p>Selects the flux braking point relative to the currently configured <code>servo.max_voltage</code>.  <code>flux braking point = max_voltage - flux_brake_margin_voltage</code>.</p>
 <p>When the input voltage is above the braking point, the controller
@@ -4534,7 +4628,7 @@ the output.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
         <script src="../../javascripts/iv-viewer.min.js"></script>
       
